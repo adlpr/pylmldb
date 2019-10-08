@@ -20,9 +20,9 @@ class VoyagerAPI:
     Interface for pulling current MARC data from the Lane Voyager HTTPS API
     """
 
-    url_base = "https://lane-local.stanford.edu/voyager-api"
     with open(os.path.join(os.path.dirname(__file__), "creds.json"),'r') as inf:
-        auth = tuple(json.load(inf))
+        url_base, auth = json.load(inf)
+    auth = tuple(auth)
 
     @classmethod
     def get_status(cls):
