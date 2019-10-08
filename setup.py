@@ -22,7 +22,7 @@ setup(
                         'regex==2019.4.14',
                         'requests==2.22.0',
                         'tqdm==4.32.1'],
-    dependency_links = ['git+git://github.com/adlpr/pymarc.git@master#egg=pymarc-3.1.L'],
+    dependency_links = ['git+git://github.com/adlpr/pymarc.git@master#egg=pymarc'],
     description = 'Package for pulling LMLDB MARC data from Voyager and reading/storing it locally',
     long_description = long_description,
     long_description_content_type = "text/markdown",
