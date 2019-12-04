@@ -21,6 +21,8 @@ setup(
     install_requires = ['pymarc==3.1.L',
                         'requests==2.22.0',
                         'regex==2019.8.19',
+                        'loguru==0.3.2',
+                        'SQLAlchemy==1.3.9',
                         'tqdm==4.36.1'],
     dependency_links = ['git+git://github.com/adlpr/pymarc.git@master#egg=pymarc-3.1.L'],
     description = 'Package for pulling LMLDB MARC data from Voyager and reading/storing it locally',

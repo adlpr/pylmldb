@@ -1,7 +1,57 @@
 #!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 
-import os, shutil, re, pickle, sqlite3
+import os, re, json, pickle
+
+from loguru import logger
+
+# ORM model specs
+
+import sqlalchemy
+from sqlalchemy import Column, String, Integer, BigInteger, Binary
+from sqlalchemy.ext.declarative import declarative_base
+Base = declarative_base()
+
+class Record(Base):
+    __tablename__ = 'records'
+    __table_args__ = {'schema':'marc'}
+
+    type = Column(String(4), primary_key=True, nullable=False)
+    ctrlno = Column(Integer, primary_key=True, nullable=False)
+    record = Column(Binary, nullable=False)
+
+    def __repr__(self):
+        return f'<Record: {self.type} {self.ctrlno}>'
+
+class HoldingsLink(Base):
+    __tablename__ = 'holdings_links'
+    __table_args__ = {'schema':'marc'}
+
+    hdg_ctrlno = Column(String(80), primary_key=True, nullable=False)
+    bib_ctrlno = Column(String(80), nullable=False)
+
+    def __repr__(self):
+        return f'<HoldingsLink {self.hdg_ctrlno} -> {self.bib_ctrlno}>'
+
+class Version(Base):
+    __tablename__ = 'version'
+    __table_args__ = {'schema':'marc'}
+
+    version = Column(String(13), primary_key=True, nullable=False)
+
+    def __repr__(self):
+        return f'<Version {self.version}>'
+
+# use /secrets file if exists, else this dir
+if os.path.exists("/secrets/creds.json"):
+    db_creds_filename = "/secrets/creds.json" 
+else:
+    db_creds_filename = os.path.join(os.path.dirname(__file__), "creds.json")
+# create engine and session maker
+with open(db_creds_filename, 'r') as inf:
+    engine = sqlalchemy.create_engine(json.load(inf).get("pg"))
+Session = sqlalchemy.orm.sessionmaker(bind=engine)
+
 
 from .VoyagerAPI import VoyagerAPI
 from .LaneMARCRecord import LaneMARCRecord
@@ -9,77 +59,59 @@ from .LaneMARCRecord import LaneMARCRecord
 
 class LMLDB:
     """
-    Interface for creating/accessing a (local) sqlite mirror of the Lane MARC catalog
-
-    records:
-    | type [BIB|AUT|HDG] | ctrlno [int w no prefix] | record [LaneMARCRecord pickled bytes] |
-
-    holdings_links:
-    | hdg_ctrlno | bib_ctrlno |
-
-    version:
-    | version |
+    Interface for creating/accessing a postgres-based mirror of the Lane MARC catalog
     """
-    def __init__(self, version=-1, reinit=False):
-        assert isinstance(version, int) or version.isdigit()
-        self.filename = os.path.join(os.path.dirname(__file__), "..", "lml.db")
-        # if version is default (-1), this is a "read-only" session
-        # if version is specified and reinit is False, this is an "update" session
-        # if version is specified and reinit is True, this is a "reinit" session
-        self.version = int(version)
-        self.read_only = self.version < 0
-        self.reinit = reinit
-        assert not (self.read_only and self.reinit), \
-            "cannot re-initialize without specified version"
-        # if requested (reinit flag set) or needed (lml.db missing),
-        #   re-initialize db
-        if self.reinit or not os.path.exists(self.filename):
+    def __init__(self, mode='r', version=0):
+        assert mode in 'rwa', f"invalid mode: {mode}"
+        self.mode = mode
+        if mode == 'r' and version != 0:
+            logger.warning(f"read mode, version ({version}) ignored")
+        assert isinstance(version, int) or version.isdigit(), \
+            f"version must be int: {version}"
+        self.version = str(int(version))
+        # establish session
+        self.session = Session()
+        if mode == 'a' and not self.__check_integrity():
+            logger.error("lmldb integrity check failed, changing mode to w")
+            self.mode = 'w'
+        if self.mode == 'w':
             self.__init_db()
-        self.conn = sqlite3.connect(self.filename)
-        self.cur = self.conn.cursor()
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if not self.read_only:
+        if self.mode != 'r':
             self.__update_version()
-        self.conn.close()
-        if not self.read_only:
-            self.__make_backup()
+        self.session.close()
+
+    def __check_integrity(self):
+        # all tables exist and there is at least one row in each
+        try:
+            for obj in (Version, Record, HoldingsLink):
+                if self.session.query(obj).first() is None:
+                    return False
+            return True
+        except:
+            return False
 
     def __init_db(self):
-        try:
-            os.remove(self.filename)
-        except:
-            pass
+        logger.debug("reinitializing lmldb")
+        # Create schema
+        engine.execute("CREATE SCHEMA IF NOT EXISTS marc")
         # Create tables
-        with sqlite3.connect(self.filename) as conn:
-            c = conn.cursor()
-            # Create tables
-            c.execute("""CREATE TABLE records (
-                          type TEXT, ctrlno TEXT, record BLOB,
-                          PRIMARY KEY (type, ctrlno)
-                         );""")
-            c.execute("""CREATE TABLE holdings_links
-                         (hdg_ctrlno TEXT PRIMARY KEY, bib_ctrlno TEXT);""")
-            c.execute("""CREATE TABLE version
-                         (version INT);""")
-            # not bothering with FK constraints
-            conn.commit()
+        Base.metadata.create_all(engine)
 
     def __update_version(self):
-        self.cur.execute("DELETE FROM version;")
-        self.cur.execute("INSERT OR REPLACE INTO version VALUES (?);",
-                          (self.version,))
-        self.conn.commit()
+        self.session.merge(Version(version=self.version))
+        self.session.commit()
 
-    def get_version(self):
-        self.cur.execute("SELECT version FROM version LIMIT 1;")
-        return self.cur.fetchone()[0]
-
-    def __make_backup(self):
-        shutil.copyfile(f"{self.filename}", f"{self.filename}.{self.version}")
+    def get_version(self) -> int:
+        try:
+            v = self.session.query(Version).first()
+            return int(v.version)
+        except:
+            return 0
 
     BIB, AUT, HDG = VoyagerAPI.BIB, VoyagerAPI.AUT, VoyagerAPI.HDG
     def populate(self, record_type, marc_reader):
@@ -91,62 +123,58 @@ class LMLDB:
             raise ValueError(f'invalid record_type: {record_type}')
         for record in marc_reader:
             add_function(record)
-        self.conn.commit()
+        self.session.commit()
 
     def __add_bib(self, bib_record):
         bib_record.__class__ = LaneMARCRecord
         ctrlno = bib_record['001'].data
-        self.cur.execute("INSERT OR REPLACE INTO records VALUES (?, ?, ?);",
-                          (self.BIB, ctrlno, pickle.dumps(bib_record)))
+        record_row = Record(type=self.BIB,
+                            ctrlno=ctrlno,
+                            record=pickle.dumps(bib_record))
+        self.session.merge(record_row)
     def __add_aut(self, aut_record):
         aut_record.__class__ = LaneMARCRecord
         ctrlno = aut_record['001'].data
-        self.cur.execute("INSERT OR REPLACE INTO records VALUES (?, ?, ?);",
-                          (self.AUT, ctrlno, pickle.dumps(aut_record)))
+        record_row = Record(type=self.AUT,
+                            ctrlno=ctrlno,
+                            record=pickle.dumps(aut_record))
+        self.session.merge(record_row)
     def __add_hdg(self, hdg_record):
         hdg_record.__class__ = LaneMARCRecord
         hdg_ctrlno = hdg_record['001'].data
         bib_ctrlno = hdg_record['004'].data
-        self.cur.execute("INSERT OR REPLACE INTO records VALUES (?, ?, ?);",
-                          (self.HDG, hdg_ctrlno, pickle.dumps(hdg_record)))
-        self.cur.execute("INSERT OR REPLACE INTO holdings_links VALUES (?, ?);",
-                          (hdg_ctrlno, bib_ctrlno))
+        record_row = Record(type=self.HDG,
+                            ctrlno=hdg_ctrlno,
+                            record=pickle.dumps(hdg_record))
+        self.session.merge(record_row)
+        hdglink_row = HoldingsLink(hdg_ctrlno=hdg_ctrlno,
+                                   bib_ctrlno=bib_ctrlno)
+        self.session.merge(hdglink_row)
 
-    def get_records(self, record_type=None, ctrlnos=[]):
+    def get_records(self, record_type=None, ctrlnos: list=[]):
         assert record_type in (None, self.BIB, self.AUT, self.HDG), \
             f"invalid record type: {record_type}"
-        query = "SELECT ctrlno, record FROM records"
-        query_where = []
-        params = ()
+        query = self.session.query(Record)
         if record_type is not None:
-            query_where.append("type = ?")
-            params += (record_type,)
+            query = query.filter_by(type=record_type)
         if ctrlnos:
-            query_where.append(f"ctrlno IN ({','.join('?'*len(ctrlnos))})")
-            params += (*ctrlnos,)
-        if query_where:
-            query += " WHERE " + " AND ".join(query_where)
-        self.cur.execute(query, params)
-        for ctrlno, record_blob in self.cur.fetchall():
-            yield ctrlno, pickle.loads(record_blob)
+            query = query.filter(Record.ctrlno.in_(ctrlnos))
+        for record in query.all():
+            yield record.ctrlno, pickle.loads(record.record)
 
-    def get_bibs(self, ctrlnos=[]):
+    def get_bibs(self, ctrlnos: list=[]):
         return self.get_records(self.BIB, ctrlnos)
-    def get_auts(self, ctrlnos=[]):
+    def get_auts(self, ctrlnos: list=[]):
         return self.get_records(self.AUT, ctrlnos)
-    def get_hdgs(self, ctrlnos=[]):
+    def get_hdgs(self, ctrlnos: list=[]):
         return self.get_records(self.HDG, ctrlnos)
 
-    def get_bibs_for_hdg(self, hdg_ctrlno):
+    def get_bibs_for_hdg(self, hdg_ctrlno: str) -> list:
         hdg_ctrlno = re.sub(r'\D', '', hdg_ctrlno)
-        self.cur.execute("""SELECT bib_ctrlno FROM holdings_links
-                            WHERE hdg_ctrlno = ?""",
-                            (hdg_ctrlno,))
-        return [result[0] for result in self.cur.fetchall()]
+        query = self.session.query(HoldingsLink).filter_by(hdg_ctrlno=hdg_ctrlno)
+        return [result.bib_ctrlno for result in query.all()]
 
-    def get_hdgs_for_bib(self, bib_ctrlno):
+    def get_hdgs_for_bib(self, bib_ctrlno: str) -> list:
         bib_ctrlno = re.sub(r'\D', '', bib_ctrlno)
-        self.cur.execute("""SELECT hdg_ctrlno FROM holdings_links
-                            WHERE bib_ctrlno = ?""",
-                            (bib_ctrlno,))
-        return [result[0] for result in self.cur.fetchall()]
+        query = self.session.query(HoldingsLink).filter_by(bib_ctrlno=bib_ctrlno)
+        return [result.hdg_ctrlno for result in query.all()]
