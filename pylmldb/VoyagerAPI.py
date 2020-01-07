@@ -13,8 +13,6 @@ records/{recordType}?time={long}
 """
 
 import os, json, requests
-from tqdm import tqdm
-
 
 class VoyagerAPI:
     """

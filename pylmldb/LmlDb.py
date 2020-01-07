@@ -61,7 +61,7 @@ class LMLDB:
     """
     Interface for creating/accessing a postgres-based mirror of the Lane MARC catalog
     """
-    def __init__(self, mode='r', version=0):
+    def __init__(self, mode='r', version=0) -> None:
         assert mode in 'rwa', f"invalid mode: {mode}"
         self.mode = mode
         if mode == 'r' and version != 0:
@@ -80,12 +80,12 @@ class LMLDB:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
         if self.mode != 'r':
             self.__update_version()
         self.session.close()
 
-    def __check_integrity(self):
+    def __check_integrity(self) -> bool:
         # all tables exist and there is at least one row in each
         try:
             for obj in (Version, Record, HoldingsLink):
@@ -95,15 +95,16 @@ class LMLDB:
         except:
             return False
 
-    def __init_db(self):
-        logger.debug("reinitializing lmldb")
+    def __init_db(self) -> None:
+        logger.info("reinitializing lmldb")
         # Create schema
         engine.execute("CREATE SCHEMA IF NOT EXISTS marc")
         # Create tables
         Base.metadata.create_all(engine)
 
-    def __update_version(self):
-        self.session.merge(Version(version=self.version))
+    def __update_version(self) -> None:
+        self.session.query(Version).delete()
+        self.session.add(Version(version=self.version))
         self.session.commit()
 
     def get_version(self) -> int:
@@ -114,7 +115,9 @@ class LMLDB:
             return 0
 
     BIB, AUT, HDG = VoyagerAPI.BIB, VoyagerAPI.AUT, VoyagerAPI.HDG
-    def populate(self, record_type, marc_reader):
+    def populate(self, record_type, marc_reader) -> list:
+        """insert record, return list of ctrlnos"""
+        ctrlnos = []
         # expects pymarc MARCReader
         add_function = { self.BIB : self.__add_bib,
                          self.AUT : self.__add_aut,
@@ -122,24 +125,27 @@ class LMLDB:
         if add_function is None:
             raise ValueError(f'invalid record_type: {record_type}')
         for record in marc_reader:
+            ctrlnos.append(record['001'].data)
             add_function(record)
         self.session.commit()
+        # logger.debug(f"{ctrlnos}")
+        return ctrlnos
 
-    def __add_bib(self, bib_record):
+    def __add_bib(self, bib_record) -> None:
         bib_record.__class__ = LaneMARCRecord
         ctrlno = bib_record['001'].data
         record_row = Record(type=self.BIB,
                             ctrlno=ctrlno,
                             record=pickle.dumps(bib_record))
         self.session.merge(record_row)
-    def __add_aut(self, aut_record):
+    def __add_aut(self, aut_record) -> None:
         aut_record.__class__ = LaneMARCRecord
         ctrlno = aut_record['001'].data
         record_row = Record(type=self.AUT,
                             ctrlno=ctrlno,
                             record=pickle.dumps(aut_record))
         self.session.merge(record_row)
-    def __add_hdg(self, hdg_record):
+    def __add_hdg(self, hdg_record) -> None:
         hdg_record.__class__ = LaneMARCRecord
         hdg_ctrlno = hdg_record['001'].data
         bib_ctrlno = hdg_record['004'].data
