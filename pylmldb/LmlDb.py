@@ -64,7 +64,7 @@ class LMLDB:
         self.version = str(int(version))
         # establish session
         self.session = Session()
-        if mode == 'a' and not self.__check_integrity():
+        if mode != 'w' and not self.__check_integrity():
             logger.error("lmldb integrity check failed, changing mode to w")
             self.mode = 'w'
         if self.mode == 'w':
