@@ -14,33 +14,25 @@ records/{recordType}?time={long}
 
 import os, json, requests
 
-# use /secrets file if it exists, else this dir
-if os.path.exists("/secrets/creds.json"):
-    CREDS_FILE_LOC = "/secrets/creds.json" 
-else:
-    CREDS_FILE_LOC = os.path.join(os.path.dirname(__file__), "creds.json")
+from .config import VOYAGER_API_ENDPOINT, VOYAGER_API_USERNAME, VOYAGER_API_PASSWORD
 
 
 class VoyagerAPI:
     """
     Interface for pulling current MARC data from the Lane Voyager HTTPS API
     """
-    with open(CREDS_FILE_LOC,'r') as inf:
-        url_base, auth = json.load(inf).get("voy")
-    auth = tuple(auth)
-
-    @classmethod
-    def get_status(cls):
-        r = requests.get(f"{cls.url_base}/status.txt", auth=cls.auth)
+    @staticmethod
+    def get_status():
+        r = requests.get(f"{VOYAGER_API_ENDPOINT}/status.txt", auth=(VOYAGER_API_USERNAME, VOYAGER_API_PASSWORD))
         return r.content
 
     BIB, AUT, HDG = 'bib', 'auth', 'mfhd'
-    @classmethod
-    def get_record(cls, record_type, record_id):
-        r = requests.get(f"{cls.url_base}/records/{record_type}/{record_id}", auth=cls.auth)
+    @staticmethod
+    def get_record(record_type, record_id):
+        r = requests.get(f"{VOYAGER_API_ENDPOINT}/records/{record_type}/{record_id}", auth=(VOYAGER_API_USERNAME, VOYAGER_API_PASSWORD))
         return r.content
 
-    @classmethod
-    def get_records(cls, record_type, time=0):
-        r = requests.get(f"{cls.url_base}/records/{record_type}?time={time}", auth=cls.auth)
+    @staticmethod
+    def get_records(record_type, time=0):
+        r = requests.get(f"{VOYAGER_API_ENDPOINT}/records/{record_type}?time={time}", auth=(VOYAGER_API_USERNAME, VOYAGER_API_PASSWORD))
         return r.content

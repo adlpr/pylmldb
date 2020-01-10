@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 
-import os, re, json, pickle
+import os, re, pickle
 
 from loguru import logger
 
@@ -42,12 +42,13 @@ class Version(Base):
     def __repr__(self):
         return f'<Version {self.version}>'
 
-from .VoyagerAPI import VoyagerAPI, CREDS_FILE_LOC
+from .VoyagerAPI import VoyagerAPI
 from .LaneMARCRecord import LaneMARCRecord
 
+from .config import SQLALCHEMY_DATABASE_URI
+
 # create engine and session maker
-with open(CREDS_FILE_LOC, 'r') as inf:
-    engine = sqlalchemy.create_engine(json.load(inf).get("pg"))
+engine = sqlalchemy.create_engine(SQLALCHEMY_DATABASE_URI)
 Session = sqlalchemy.orm.sessionmaker(bind=engine)
 
 class LMLDB:
@@ -84,9 +85,10 @@ class LMLDB:
             for obj in (Version, Record, HoldingsLink):
                 if self.session.query(obj).first() is None:
                     return False
-            return True
         except:
             return False
+        else:
+            return True
 
     def __init_db(self) -> None:
         logger.info("reinitializing lmldb")
