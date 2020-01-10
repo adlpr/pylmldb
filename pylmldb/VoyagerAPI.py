@@ -14,11 +14,18 @@ records/{recordType}?time={long}
 
 import os, json, requests
 
+# use /secrets file if it exists, else this dir
+if os.path.exists("/secrets/creds.json"):
+    CREDS_FILE_LOC = "/secrets/creds.json" 
+else:
+    CREDS_FILE_LOC = os.path.join(os.path.dirname(__file__), "creds.json")
+
+
 class VoyagerAPI:
     """
     Interface for pulling current MARC data from the Lane Voyager HTTPS API
     """
-    with open(os.path.join(os.path.dirname(__file__), "creds.json"),'r') as inf:
+    with open(CREDS_FILE_LOC,'r') as inf:
         url_base, auth = json.load(inf).get("voy")
     auth = tuple(auth)
 

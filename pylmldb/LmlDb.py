@@ -42,20 +42,13 @@ class Version(Base):
     def __repr__(self):
         return f'<Version {self.version}>'
 
-# use /secrets file if exists, else this dir
-if os.path.exists("/secrets/creds.json"):
-    db_creds_filename = "/secrets/creds.json" 
-else:
-    db_creds_filename = os.path.join(os.path.dirname(__file__), "creds.json")
-# create engine and session maker
-with open(db_creds_filename, 'r') as inf:
-    engine = sqlalchemy.create_engine(json.load(inf).get("pg"))
-Session = sqlalchemy.orm.sessionmaker(bind=engine)
-
-
-from .VoyagerAPI import VoyagerAPI
+from .VoyagerAPI import VoyagerAPI, CREDS_FILE_LOC
 from .LaneMARCRecord import LaneMARCRecord
 
+# create engine and session maker
+with open(CREDS_FILE_LOC, 'r') as inf:
+    engine = sqlalchemy.create_engine(json.load(inf).get("pg"))
+Session = sqlalchemy.orm.sessionmaker(bind=engine)
 
 class LMLDB:
     """
