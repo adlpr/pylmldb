@@ -3,6 +3,7 @@
 
 import unicodedata
 import regex as re
+from loguru import logger
 
 from pymarc import Record, Field
 
@@ -34,10 +35,10 @@ class LaneMARCRecord(Record):
         broad_categories = [field['a'] for field in self.get_fields('655') if field.indicator1 == '4']
         if not broad_categories:
             if '852' not in self:
-                print(f"WARNING: {self.get_control_number()}: missing broad category (655 47)")
+                logger.warning(f"{self.get_control_number() or self['001'].data}: missing broad category (655 47)")
             return None
         elif len(broad_categories) > 1:
-            print(f"WARNING: {self.get_control_number()}: more than one broad category (655 47)")
+            logger.warning(f"{self.get_control_number() or self['001'].data}: more than one broad category (655 47)")
             return None
         return broad_categories.pop()
 
@@ -145,7 +146,7 @@ class LaneMARCRecord(Record):
         id_field = self.get_id_field()
         if id_field is None:
             if not self.is_suppressed():
-                print("PROBLEM: no id field found:", ctrlno)
+                logger.error(f"{ctrlno}: no id field found")
             return (), None, None, None
         # get the identity
         element_type = self.get_xobis_element_type()
