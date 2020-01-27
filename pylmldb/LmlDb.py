@@ -120,8 +120,8 @@ class LMLDB:
         if add_function is None:
             raise ValueError(f'invalid record_type: {record_type}')
         for record in marc_reader:
-            ctrlnos.append(record['001'].data)
             add_function(record)
+            ctrlnos.append(record['001'].data)
         self.session.commit()
         # logger.debug(f"{ctrlnos}")
         return ctrlnos
@@ -152,7 +152,7 @@ class LMLDB:
                                    bib_ctrlno=bib_ctrlno)
         self.session.merge(hdglink_row)
 
-    def get_records(self, record_type=None, ctrlnos: list=[]):
+    def get_records(self, record_type=None, ctrlnos: list=[], batch_size: int=0):
         assert record_type in (None, self.BIB, self.AUT, self.HDG), \
             f"invalid record type: {record_type}"
         query = self.session.query(Record)
@@ -160,15 +160,27 @@ class LMLDB:
             query = query.filter_by(type=record_type)
         if ctrlnos:
             query = query.filter(Record.ctrlno.in_(ctrlnos))
-        for record in query.all():
-            yield record.ctrlno, pickle.loads(record.record)
+        if batch_size > 0:
+            # return lists of size batch_size, of tuples
+            query = query.limit(batch_size)
+            current_offset = 0
+            records = [(record.ctrlno, pickle.loads(record.record)) for record in query]
+            while len(records) > 0:
+                yield records
+                current_offset += batch_size
+                query = query.offset(current_offset)
+                records = [(record.ctrlno, pickle.loads(record.record)) for record in query]
+        else:
+            # return tuples
+            for record in query:
+                yield record.ctrlno, pickle.loads(record.record)
 
-    def get_bibs(self, ctrlnos: list=[]):
-        return self.get_records(self.BIB, ctrlnos)
-    def get_auts(self, ctrlnos: list=[]):
-        return self.get_records(self.AUT, ctrlnos)
-    def get_hdgs(self, ctrlnos: list=[]):
-        return self.get_records(self.HDG, ctrlnos)
+    def get_bibs(self, ctrlnos: list=[], batch_size: int=0):
+        return self.get_records(self.BIB, ctrlnos, batch_size)
+    def get_auts(self, ctrlnos: list=[], batch_size: int=0):
+        return self.get_records(self.AUT, ctrlnos, batch_size)
+    def get_hdgs(self, ctrlnos: list=[], batch_size: int=0):
+        return self.get_records(self.HDG, ctrlnos, batch_size)
 
     def get_bibs_for_hdg(self, hdg_ctrlno: str) -> list:
         hdg_ctrlno = re.sub(r'\D', '', hdg_ctrlno)
