@@ -155,7 +155,7 @@ class LMLDB:
     def get_records(self, record_type=None, ctrlnos: list=[], batch_size: int=0):
         assert record_type in (None, self.BIB, self.AUT, self.HDG), \
             f"invalid record type: {record_type}"
-        query = self.session.query(Record)
+        query = self.session.query(Record).order_by(Record.ctrlno)
         if record_type is not None:
             query = query.filter_by(type=record_type)
         if ctrlnos:
@@ -185,9 +185,9 @@ class LMLDB:
     def get_bibs_for_hdg(self, hdg_ctrlno: str) -> list:
         hdg_ctrlno = re.sub(r'\D', '', hdg_ctrlno)
         query = self.session.query(HoldingsLink).filter_by(hdg_ctrlno=hdg_ctrlno)
-        return [result.bib_ctrlno for result in query.all()]
+        return [result.bib_ctrlno for result in query]
 
     def get_hdgs_for_bib(self, bib_ctrlno: str) -> list:
         bib_ctrlno = re.sub(r'\D', '', bib_ctrlno)
         query = self.session.query(HoldingsLink).filter_by(bib_ctrlno=bib_ctrlno)
-        return [result.hdg_ctrlno for result in query.all()]
+        return [result.hdg_ctrlno for result in query]
