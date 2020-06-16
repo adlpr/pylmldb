@@ -10,3 +10,5 @@ __pycache__/
 config.py
 
 /p*.py
+
+surveyor/data/

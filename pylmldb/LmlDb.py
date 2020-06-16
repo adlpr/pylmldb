@@ -8,7 +8,7 @@ from loguru import logger
 # ORM model specs
 
 import sqlalchemy
-from sqlalchemy import Column, String, Integer, BigInteger, Binary
+from sqlalchemy import Column, String, Integer, Binary
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
@@ -55,7 +55,7 @@ class LMLDB:
     """
     Interface for creating/accessing a postgres-based mirror of the Lane MARC catalog
     """
-    def __init__(self, mode='r', version=0) -> None:
+    def __init__(self, mode='r', version=0, cache_bibmfhd_links=True) -> None:
         assert mode in 'rwa', f"invalid mode: {mode}"
         self.mode = mode
         if mode == 'r' and version != 0:
@@ -70,6 +70,7 @@ class LMLDB:
             self.mode = 'w'
         if self.mode == 'w':
             self.__init_db()
+        self.cache_bibmfhd_links = cache_bibmfhd_links
 
     def __enter__(self):
         return self
@@ -183,11 +184,29 @@ class LMLDB:
         return self.get_records(self.HDG, ctrlnos, batch_size)
 
     def get_bibs_for_hdg(self, hdg_ctrlno: str) -> list:
+        if self.cache_bibmfhd_links:
+            if self.hdg_to_bib_map is None:
+                self.__fetch_and_cache_bib_hdg_maps()
+            return self.hdg_to_bib_map.get(hdg_ctrlno)
         hdg_ctrlno = re.sub(r'\D', '', hdg_ctrlno)
         query = self.session.query(HoldingsLink).filter_by(hdg_ctrlno=hdg_ctrlno)
         return [result.bib_ctrlno for result in query]
 
     def get_hdgs_for_bib(self, bib_ctrlno: str) -> list:
+        if self.cache_bibmfhd_links:
+            if self.bib_to_hdg_map is None:
+                self.__fetch_and_cache_bib_hdg_maps()
+            return self.bib_to_hdg_map.get(bib_ctrlno)
         bib_ctrlno = re.sub(r'\D', '', bib_ctrlno)
         query = self.session.query(HoldingsLink).filter_by(bib_ctrlno=bib_ctrlno)
         return [result.hdg_ctrlno for result in query]
+
+    bib_to_hdg_map, hdg_to_bib_map = None, None
+    def __fetch_and_cache_bib_hdg_maps(self):
+        self.bib_to_hdg_map, self.hdg_to_bib_map = {}, {}
+        for hdg_link in self.session.query(HoldingsLink):
+            bib_ctrlno, hdg_ctrlno = hdg_link.bib_ctrlno, hdg_link.hdg_ctrlno
+            self.hdg_to_bib_map[hdg_ctrlno] = [bib_ctrlno]
+            if bib_ctrlno not in self.bib_to_hdg_map:
+                self.bib_to_hdg_map[bib_ctrlno] = []
+            self.bib_to_hdg_map[bib_ctrlno].append(hdg_ctrlno)

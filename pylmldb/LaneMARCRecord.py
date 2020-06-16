@@ -48,6 +48,16 @@ class LaneMARCRecord(Record):
     def get_all_categories(self):
         return [val for field in self.get_fields('655') for val in field.get_subfields('a') if field.indicator1 not in '78']
 
+    def get_isbns(self):
+        isbn_vals = self.get_subfields('020',('a','z')) + [val for field in self.get_fields('024') for val in field.get_subfields('a','z') if field.indicator1 == '3']
+        # wipe all parentheticals and anything after colon/dollar sign/v; nums + X only
+        return [re.sub(r'[^\dX]', '', re.sub(r'[\(:\$Vv].*', '', val).upper()) for val in isbn_vals]
+
+    def get_issns(self):
+        issn_vals = self.get_subfields('022',('a','l','m','y','z'))
+        # wipe all parentheticals and anything after colon/dollar sign/v; nums + X only
+        return [re.sub(r'[^\dX]', '', re.sub(r'[\(:\$Vv].*', '', val).upper()) for val in issn_vals]
+
     def is_referential(self):
         if '008' not in self:
             return None
