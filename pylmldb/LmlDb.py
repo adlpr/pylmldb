@@ -201,12 +201,32 @@ class LMLDB:
         query = self.session.query(HoldingsLink).filter_by(bib_ctrlno=bib_ctrlno)
         return [result.hdg_ctrlno for result in query]
 
-    bib_to_hdg_map, hdg_to_bib_map = None, None
+    bib_to_hdg_map, hdg_to_bib_map, prefixed_hdg_to_bib_map = None, None, None
     def fetch_and_cache_bib_hdg_maps(self):
-        self.bib_to_hdg_map, self.hdg_to_bib_map = {}, {}
+        self.bib_to_hdg_map, self.hdg_to_bib_map, self.prefixed_hdg_to_bib_map = {}, {}, {}
         for hdg_link in self.session.query(HoldingsLink):
             bib_ctrlno, hdg_ctrlno = hdg_link.bib_ctrlno, hdg_link.hdg_ctrlno
             self.hdg_to_bib_map[hdg_ctrlno] = [bib_ctrlno]
+            prefixed_bib_ctrlno = get_prefixed_bib_control_number(bib_ctrlno)
+            if prefixed_bib_ctrlno is not None:
+                self.prefixed_hdg_to_bib_map[f"(CStL)H{hdg_ctrlno}"] = prefixed_bib_ctrlno
             if bib_ctrlno not in self.bib_to_hdg_map:
                 self.bib_to_hdg_map[bib_ctrlno] = []
             self.bib_to_hdg_map[bib_ctrlno].append(hdg_ctrlno)
+
+    # numerical (voyager) id to full prefixed control number
+    def get_prefixed_bib_control_number(self, bibid: str) -> str:
+        if self.bib_id_to_ctrlno_letter_map is None:
+            self.__fetch_and_cache_bib_ctrlno_letters()
+        ctrlno_letter = self.bib_id_to_ctrlno_letter_map.get(bibid)
+        if ctrlno_letter is None:
+            return None
+        return f"(CStL){ctrlno_letter}{bibid}"
+
+    bib_id_to_ctrlno_letter_map = None
+    def __fetch_and_cache_bib_ctrlno_letters(self):
+        self.bib_id_to_ctrlno_letter_map = {}
+        for bibid, record in self.get_bibs():
+            prefixed_ctrlno = record.get_control_number()
+            if prefixed_ctrlno is not None:
+                self.bib_id_to_ctrlno_letter_map[str(bibid)] = prefixed_ctrlno[6]
