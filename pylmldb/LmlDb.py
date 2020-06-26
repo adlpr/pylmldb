@@ -186,7 +186,7 @@ class LMLDB:
     def get_bibs_for_hdg(self, hdg_ctrlno: str) -> list:
         if self.cache_bibmfhd_links:
             if self.hdg_to_bib_map is None:
-                self.__fetch_and_cache_bib_hdg_maps()
+                self.fetch_and_cache_bib_hdg_maps()
             return self.hdg_to_bib_map.get(hdg_ctrlno)
         hdg_ctrlno = re.sub(r'\D', '', hdg_ctrlno)
         query = self.session.query(HoldingsLink).filter_by(hdg_ctrlno=hdg_ctrlno)
@@ -195,14 +195,14 @@ class LMLDB:
     def get_hdgs_for_bib(self, bib_ctrlno: str) -> list:
         if self.cache_bibmfhd_links:
             if self.bib_to_hdg_map is None:
-                self.__fetch_and_cache_bib_hdg_maps()
+                self.fetch_and_cache_bib_hdg_maps()
             return self.bib_to_hdg_map.get(bib_ctrlno)
         bib_ctrlno = re.sub(r'\D', '', bib_ctrlno)
         query = self.session.query(HoldingsLink).filter_by(bib_ctrlno=bib_ctrlno)
         return [result.hdg_ctrlno for result in query]
 
     bib_to_hdg_map, hdg_to_bib_map = None, None
-    def __fetch_and_cache_bib_hdg_maps(self):
+    def fetch_and_cache_bib_hdg_maps(self):
         self.bib_to_hdg_map, self.hdg_to_bib_map = {}, {}
         for hdg_link in self.session.query(HoldingsLink):
             bib_ctrlno, hdg_ctrlno = hdg_link.bib_ctrlno, hdg_link.hdg_ctrlno
