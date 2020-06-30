@@ -207,7 +207,7 @@ class LMLDB:
         for hdg_link in self.session.query(HoldingsLink):
             bib_ctrlno, hdg_ctrlno = hdg_link.bib_ctrlno, hdg_link.hdg_ctrlno
             self.hdg_to_bib_map[hdg_ctrlno] = [bib_ctrlno]
-            prefixed_bib_ctrlno = get_prefixed_bib_control_number(bib_ctrlno)
+            prefixed_bib_ctrlno = self.get_prefixed_bib_control_number(bib_ctrlno)
             if prefixed_bib_ctrlno is not None:
                 self.prefixed_hdg_to_bib_map[f"(CStL)H{hdg_ctrlno}"] = prefixed_bib_ctrlno
             if bib_ctrlno not in self.bib_to_hdg_map:
